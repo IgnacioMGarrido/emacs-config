@@ -1,0 +1,389 @@
+
+* Configuration start
+
+** Preliminaries
+
+We have to be sure to set ~lexical-binding~ in the file header to opt into Emacs lexical scope. Emacs Lisp really isn't the worst language once you pull in the community's /de facto/ standard libraries, but you need lexical scope.
+
+#+begin_src emacs-lisp
+  ;; -*- coding: utf-8; lexical-binding: t -*-
+#+end_src
+
+#+begin_src emacs-lisp
+  (require 'use-package)
+#+end_src
+
+Many of Emacs's defaults are ill-suited for my purposes, but the first one that needs fixing is the shockingly low garbage-collection threshold, which defaults to a paltry *:8kb*. Setting it to *:100mb* seems to strike a nice balance between GC pauses and performance. We also need to bump the number of bindings/unwind-protects (~max-specpdl-size~).
+
+#+begin_src emacs-lisp
+  (setq gc-cons-threshold 100000000)
+  (setq max-specpdl-size 5000)
+#+end_src
+
+The most useful Emacs command is ~execute-extended-command~. It should be painless to access from the home row. (~bind-key*~ ensures that this setting is propagated through all major modes, which saves us a bunch of ~unbind-key~ calls in ~use-package~ stanzas.) Why not something even easier, like ~C-;~, you ask? Unfortunately, macOS Terminal.app swallows that keybinding and does nothing with it. I'm sure this is correct behavior by some sort of standard, but I have to work around it, since occasionally I do use Emacs in the terminal.
+
+#+begin_src emacs-lisp
+  (bind-key* "C-c ;" #'execute-extended-command)
+  (bind-key* "C-c 4" #'execute-extended-command) ;; for a purely left-handed combo
+  (bind-key* "C-c C-;" #'execute-extended-command-for-buffer)
+#+end_src
+
+Also we would like some quick access to fin files commands
+
+#+begin_src emacs-lisp
+  (define-key global-map "\ef" 'find-file)
+  (define-key global-map "\eF" 'find-file-other-window)
+
+  (define-key global-map "\eb" 'ido-switch-buffer)
+  (define-key global-map "\eB" 'ido-switch-buffer-other-window)
+#+end_src
+
+
+Since subsequent packages like ~libgit~ may depend on executables like ~cmake~, we need to ensure that Emacs has access to the PATH associated with the current environment.
+
+#+begin_src emacs-lisp
+  ;; exec-path-from shell was misbehaving, this hack seems to mollify it
+  (use-package exec-path-from-shell
+    :init
+    (exec-path-from-shell-initialize))
+#+end_src
+
+With this auxiliary package for ~use-package~, we can instruct Emacs that a given package depends on the presence of a system tool. It will even install this tool with the system's recommended package manager.
+
+#+begin_src emacs-lisp
+  (use-package use-package-ensure-system-package)
+#+end_src
+
+The ~try~ package lets me try out a new Emacs package without it cluttering up my system permanently.
+
+#+begin_src emacs-lisp
+  (use-package try)
+#+end_src
+
+** Fixing defaults
+
+Fixing Emacs's defaults is a nontrivial problem. We'll start with UI concerns.
+
+#+begin_src emacs-lisp
+    ;; Fixing emacs defaults
+    (setq
+     ;; No need to see GNU agitprop.
+     inhibit-startup-screen t
+     ;; No need to remind me what a scratch buffer is.
+     initial-scratch-message nil
+     ;; Double-spaces after periods is morally wrong.
+     sentence-end-double-space nil
+     ;; Never ding at me, ever.
+     ring-bell-function 'ignore
+     ;; Save existing clipboard text into the kill ring before replacing it.
+     save-interprogram-paste-before-kill t
+     ;; Prompts should go in the minibuffer, not in a GUI.
+     use-dialog-box nil
+     ;; Fix undo in commands affecting the mark.
+     mark-even-if-inactive nil
+     ;; Let C-k delete the whole line.
+     kill-whole-line t
+     ;; search should be case-sensitive by default
+     case-fold-search nil
+     ;; accept 'y' or 'n' instead of yes/no
+     ;; the documentation advises against setting this variable
+     ;; the documentation can get bent imo
+     use-short-answers t
+     ;; my source directory
+     default-directory "C:/dev"
+     ;; eke out a little more scrolling performance
+     fast-but-imprecise-scrolling t
+     ;; prefer newer elisp files
+     load-prefer-newer t
+     ;; when I say to quit, I mean quit
+     confirm-kill-processes nil
+     ;; if native-comp is having trouble, there's not very much I can do
+     native-comp-async-report-warnings-errors 'silent
+     ;; unicode ellipses are better
+     truncate-string-ellipsis "..."
+     ;; I want to close these fast, so switch to it so I can just hit 'q'
+     help-window-select t
+     ;; this certainly can't hurt anything
+     delete-by-moving-to-trash t
+     ;; keep the point in the same place while scrolling
+     scroll-preserve-screen-position t
+     ;; More dynamic scroll
+     scroll-step 3
+     ;; more info in completions
+     completions-detailed t
+     ;; highlight error messages more aggressively
+     next-error-message-highlight t
+     ;; don't let the minibuffer muck up my window tiling
+     read-minibuffer-restore-windows t
+     ;; scope save prompts to individual projects
+     save-some-buffers-default-predicate 'save-some-buffers-root
+     ;; don't keep duplicate entries in kill ring
+     kill-do-not-save-duplicates t
+     ;; Save last known place in file
+     save-place-mode 1
+     ;; Reset recent files
+     recentf-mode 1
+     ;; History mode
+     history-lenght 25
+     ;; Save hist mode
+     savehist-mode 1
+
+     )
+
+  ;; Never mix tabs and spaces. Never use tabs, period.
+  ;; We need the setq-default here because this becomes
+  ;; a buffer-local variable when set.
+  (setq-default indent-tabs-mode nil)
+
+  (tool-bar-mode 1)
+  (scroll-bar-mode -1)
+  (menu-bar-mode 1)
+
+#+end_src
+
+It's good that Emacs supports the wide variety of file encodings it does, but UTF-8 should always, /always/ be the default.
+
+#+begin_src emacs-lisp
+  (set-charset-priority 'unicode)
+  (prefer-coding-system 'utf-8-unix)
+#+end_src
+
+We also need to turn on a few modes to have behavior that's even remotely modern.
+
+#+begin_src emacs-lisp
+  (delete-selection-mode t)
+  (global-display-line-numbers-mode t)
+  (column-number-mode)
+#+end_src
+
+Emacs 27 comes with fast current-line highlight functionality, but it can produce some visual feedback in ~vterm~ buffers, so we only activate it in programming or text modes.
+
+#+begin_src emacs-lisp
+  (require 'hl-line)
+  (add-hook 'prog-mode-hook #'hl-line-mode)
+  (add-hook 'text-mode-hook #'hl-line-mode)
+#+end_src
+
+Emacs is super fond of littering filesystems with backups and autosaves, since it was built with the assumption that multiple users could be using the same Emacs instance on the same filesystem. This was valid in 1980. It is no longer the case.
+
+#+begin_src emacs-lisp
+  (setq
+   make-backup-files nil
+   auto-save-default nil
+   create-lockfiles nil)
+#+end_src
+
+There are a great many keybindings that are actively hostile, in that they are bound to useless or obsolete functions that are really easy to trigger accidentally. (The lambda is because ~unbind-key~ is a macro.)
+
+#+begin_src emacs-lisp
+  (defun pt/unbind-bad-keybindings ()
+    "Remove unhelpful keybindings."
+    (-map (lambda (x) (unbind-key x)) '("C-x C-f" ;; find-file-read-only
+                                        "C-x C-d" ;; list-directory
+                                        "C-z" ;; suspend-frame
+                                        "C-x C-z" ;; again
+                                        "<mouse-2>" ;; pasting with mouse-wheel click
+                                        "<C-wheel-down>" ;; text scale adjust
+                                        "<C-wheel-up>" ;; ditto
+                                        "s-n" ;; make-frame
+                                        "s-t" ;; ns-popup-font-panel
+                                        "s-p" ;; ns-print-buffer
+                                        "C-x C-q" ;; read-only-mode
+                                        )))
+#+end_src
+
+These libraries are helpful to have around when writing little bits of elisp, like the above. You can't possibly force me to remember the difference between the ~mapcar~, ~mapc~, ~mapcan~, ~mapconcat~, the ~cl-~ versions of some of the aforementioned, and ~seq-map~. I refuse. ~shut-up~ is good for noisy packages.
+
+#+begin_src emacs-lisp
+  (use-package s)
+  (use-package dash :config (pt/unbind-bad-keybindings))
+  (use-package shut-up)
+#+end_src
+
+
+Emacs can jump between header files and implementation files, or implementations and tests, as needed.
+
+#+begin_src emacs-lisp
+  (bind-key "s-<up>" #'ff-find-related-file)
+  (bind-key "C-c a f" #'ff-find-related-file)
+#+end_src
+
+Searching should be done with isearch, for UI purposes.
+
+#+begin_src emacs-lisp
+  (bind-key "C-s" #'isearch-forward-regexp)
+  (bind-key "C-c s" #'isearch-forward-symbol)
+#+end_src
+
+The out-of-the-box treatment of whitespace is unfortunate, but fixable.
+
+#+begin_src emacs-lisp
+  (add-hook 'before-save-hook #'delete-trailing-whitespace)
+  (setq require-final-newline t)
+  (bind-key "C-c q" #'fill-paragraph)
+  (bind-key "C-c Q" #'set-fill-column)
+
+  (defun pt/indent-just-yanked ()
+    "Re-indent whatever you just yanked appropriately."
+    (interactive)
+    (exchange-point-and-mark)
+    (indent-region (region-beginning) (region-end))
+    (deactivate-mark))
+
+  (bind-key "C-c I" #'pt/indent-just-yanked)
+#+end_src
+
+By default, Emacs wraps long lines, inserting a little icon to indicate this. I find this a bit naff. What we can do to mimic more modern behavior is to allow line truncation by default, but also allow touchpad-style scrolling of the document.
+
+#+begin_src emacs-lisp
+  (setq mouse-wheel-tilt-scroll t
+        mouse-wheel-flip-direction t)
+  (setq-default truncate-lines t)
+#+end_src
+
+By default, Emacs ships with a nice completion system based on buffer contents, but inexplicably cripples its functionality by setting this completion system to ignore case in inserted results. Absolutely remarkable choice of defaults.
+
+#+begin_src emacs-lisp
+  (use-package dabbrev
+    :bind* (("C-/" . #'dabbrev-completion))
+    :custom
+    (dabbrev-check-all-buffers t)
+    (dabbrev-case-replace nil))
+
+
+  ;; TODO: I want to use the fancy-dabbrev package everywhere,
+  ;; but it uses popup.el rather than read-completion, and
+  ;; I don't like how quickly it operates on its inline suggestions
+#+end_src
+
+I never want to quit if readme.org is in a bad state. This warns me should I accidentally do so.
+
+#+begin_src emacs-lisp
+  (defun check-config ()
+    "Warn if exiting Emacs with a readme.org that doesn't load."
+    (or
+     (ignore-errors (org-babel-load-file "~/.config/emacs/readme.org"))
+     (y-or-n-p "Configuration file may be malformed: really exit?")))
+
+  (push #'check-config kill-emacs-query-functions)
+#+end_src
+
+** Visuals
+
+It's a mystery why Emacs doesn't allow colors by default in its compilation buffer, but ~fancy-compilation~ addresses that (and ensures the background color is set to something dark so that programs that make assumptions about its colors don't break).
+
+#+begin_src emacs-lisp
+  (use-package fancy-compilation :config (fancy-compilation-mode))
+#+end_src
+
+Emacs looks a lot better when it has a modern monospaced font and VSCode-esque icons, as well as smooth scrolling.
+
+#+begin_src emacs-lisp
+  (set-face-attribute 'default nil :font "Menlo-13")
+  (set-face-attribute 'variable-pitch nil :font "SF Mono-12")
+
+  (let ((installed (package-installed-p 'all-the-icons)))
+    (use-package all-the-icons)
+    (unless installed (all-the-icons-install-fonts)))
+
+  (use-package all-the-icons-dired
+    :after all-the-icons
+    :hook (dired-mode . all-the-icons-dired-mode))
+#+end_src
+
+Every Emacs window should, by default occupy all the screen space it can.
+
+#+begin_src emacs-lisp
+  (add-to-list 'default-frame-alist '(fullscreen . maximized))
+#+end_src
+
+I use the [[https://github.com/hlissner/emacs-doom-themes][Doom Emacs themes]], which are gorgeous. I sometimes also use Modus Vivendi, the excellent new theme that now ships with Emacs.
+
+#+begin_src emacs-lisp
+  (use-package doom-themes
+    :config
+    (let ((chosen-theme 'doom-material-dark))
+      (doom-themes-visual-bell-config)
+      (doom-themes-org-config)
+      (setq doom-challenger-deep-brighter-comments t
+            doom-challenger-deep-brighter-modeline t
+            doom-rouge-brighter-comments t
+            doom-ir-black-brighter-comments t
+            modus-themes-org-blocks 'gray-background
+            doom-dark+-blue-modeline nil)
+      (load-theme chosen-theme)))
+#+end_src
+
+Most major modes pollute the modeline, so we pull in diminish.el to quiesce them.
+
+#+begin_src emacs-lisp
+  (use-package diminish
+    :config
+    (diminish 'visual-line-mode))
+#+end_src
+
+The default modeline is pretty uninspiring, and ~mood-line~ is very minimal and pleasing. With a bit of elbow grease, it can be convinced to show the project-relative file name.
+
+#+begin_src emacs-lisp
+  (defun pt/project-relative-file-name (include-prefix)
+    "Return the project-relative filename, or the full path if INCLUDE-PREFIX is t."
+    (letrec
+        ((fullname (if (equal major-mode 'dired-mode) default-directory (buffer-file-name)))
+         (root (project-root (project-current)))
+         (relname (if fullname (file-relative-name fullname root) fullname))
+         (should-strip (and root (not include-prefix))))
+      (if should-strip relname fullname)))
+
+  (use-package mood-line
+    :config
+    (defun pt/mood-line-segment-project-advice (oldfun)
+      "Advice to use project-relative file names where possible."
+      (let
+          ((project-relative (ignore-errors (pt/project-relative-file-name nil))))
+           (if
+               (and (project-current) (not org-src-mode) project-relative)
+               (propertize (format "%s  " project-relative) 'face 'mood-line-buffer-name)
+             (funcall oldfun))))
+
+    (advice-add 'mood-line-segment-buffer-name :around #'pt/mood-line-segment-project-advice)
+    (mood-line-mode))
+#+end_src
+
+Highlighting the closing/opening pair associated with a given parenthesis is essential. Furthermore, parentheses should be delimited by color. I may be colorblind, but it's good enough, usually.
+
+#+begin_src emacs-lisp
+  (use-package rainbow-delimiters
+    :disabled
+    :hook ((prog-mode . rainbow-delimiters-mode)))
+#+end_src
+
+** Add Emacs Theme
+
+#+begin_src emacs-lisp
+  ;;(load-theme 'modus-vivendi t)
+#+end_src
+
+** Set Font
+
+#+begin_src emacs-lisp
+ ;; (set-face-attribute 'default t :font "Ac437 ToshibaSat 8x14-14")
+ ;; (add-to-list 'default-frame-alist '(font . "Ac437 ToshibaSat 8x14-14"))
+ ;; (add-to-list 'default-frame-alist '(fullscreen . maximized))
+#+end_src
+
+
+** Startup Windowing
+
+#+begin_src emacs-lisp
+  (setq next-line-add-newlines nil)
+  (setq-default truncate-lines t)
+  (setq truncate-partial-width-windows nil)
+  (split-window-horizontally)
+#+end_src
+
+** Miscelaneous
+
+#+begin_src emacs-lisp
+  ;; Clock
+  (display-time)
+#+end_src
