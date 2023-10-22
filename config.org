@@ -1,6 +1,41 @@
 
 * Configuration start
 
+** Package Manager
+
+#+begin_src emacs-lisp
+(require 'package)
+  ;;(add-to-list 'package-archives '("marmalade" . "https://marmalade-repo.org/packages/") t)
+  (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+ ;; (add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
+  (add-to-list 'package-archives '("ublt" . "https://elpa.ubolonton.org/packages/") t)
+  (add-to-list 'package-archives '("org" . "http://orgmode.org/elpa/") t)
+(setq package-native-compile t)
+(setq use-package-always-ensure t)
+(unless (package-installed-p 'use-package)
+  (message "refreshing contents")
+  (unless package-archive-contents (package-refresh-contents))
+  (package-install 'use-package))
+
+#+end_src
+
+** Basic startup config
+
+#+begin_src emacs-lisp
+(require 'server)
+(unless (server-running-p) (server-start))
+(setq server-use-tcp t)
+(defun server-ensure-safe-dir (dir) "Noop" t)
+
+(eval-when-compile
+  (require 'use-package)
+  (require 'ob-tangle)
+  ;;(require 'compile)
+  ;;(require 'cc-mode)
+)
+#+end_src
+
+
 ** Preliminaries
 
 We have to be sure to set ~lexical-binding~ in the file header to opt into Emacs lexical scope. Emacs Lisp really isn't the worst language once you pull in the community's /de facto/ standard libraries, but you need lexical scope.
@@ -160,6 +195,8 @@ There are a great many keybindings that are actively hostile, in that they are b
                                         "s-t" ;; ns-popup-font-panel
                                         "s-p" ;; ns-print-buffer
                                         "C-x C-q" ;; read-only-mode
+                                        "<M-right>"
+                                        "<M-left>"
                                         )))
 #+end_src
 
@@ -192,7 +229,7 @@ By default, Emacs wraps long lines, inserting a little icon to indicate this. I 
   (setq-default truncate-lines t)
 #+end_src
 
-I never want to quit if readme.org is in a bad state. This warns me should I accidentally do so.
+I never want to quit if configure.org is in a bad state. This warns me should I accidentally do so.
 
 #+begin_src emacs-lisp
   (defun check-config ()
@@ -221,6 +258,15 @@ Never split a window
 #+end_src
 
 ** Basic Key Bindings
+
+Window Navigation
+#+begin_src emacs-lisp
+      (when (fboundp 'windmove-default-keybindings)
+        (windmove-default-keybindings 'meta))
+       (global-set-key (kbd "s-<left>") 'windmove-left)
+       (global-set-key (kbd "s-<right>") 'windmove-right)
+#+end_src
+
 ** Visuals
 
 It's a mystery why Emacs doesn't allow colors by default in its compilation buffer, but ~fancy-compilation~ addresses that (and ensures the background color is set to something dark so that programs that make assumptions about its colors don't break).
@@ -330,11 +376,10 @@ highlighting Python with ~emacs-tree-sitter~ will correctly highlight code insid
 which is really quite useful. Note that for this to work you have to add the tree-sitter ELPA server.
 
 #+begin_src emacs-lisp
-;; (shut-up
-;;   (use-package tree-sitter
-;;     :config (global-tree-sitter-mode))
-;;
-;;   (use-package tree-sitter-langs))
+ (shut-up
+   (use-package tree-sitter
+     :config (global-tree-sitter-mode))
+   (use-package tree-sitter-langs))
 #+end_src
 
 *** Which Key
